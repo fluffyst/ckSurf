@@ -348,6 +348,8 @@ public void OnAdminMenuReady(Handle topmenu)
 	g_hAdminMenu = topmenu;
 	TopMenuObject serverCmds = FindTopMenuCategory(g_hAdminMenu, ADMINMENU_SERVERCOMMANDS);
 	AddToTopMenu(g_hAdminMenu, "sm_ckadmin", TopMenuObject_Item, TopMenuHandler2, serverCmds, "sm_ckadmin", ADMFLAG_RCON);
+	AddToTopMenu(g_hAdminMenu, "sm_botfix", TopMenuObject_Item, TopMenuHandler3, INVALID_TOPMENUOBJECT, "sm_admin", ADMFLAG_GENERIC);
+	AddToTopMenu(g_hAdminMenu, "sm_reload", TopMenuObject_Item, TopMenuHandler4, INVALID_TOPMENUOBJECT, "sm_admin", ADMFLAG_GENERIC);
 }
 
 public int TopMenuHandler2(Handle topmenu, TopMenuAction action, TopMenuObject object_id, int param, char[] buffer, int maxlength)
@@ -359,18 +361,49 @@ public int TopMenuHandler2(Handle topmenu, TopMenuAction action, TopMenuObject o
 		if (action == TopMenuAction_SelectOption)
 		Admin_ckPanel(param, 0);
 }
-public Action Admin_ReloadTier(int client, int args)
+public int TopMenuHandler3(Handle topmenu, TopMenuAction action, TopMenuObject object_id, int param, char[] buffer, int maxlength)
+{
+	if (action == TopMenuAction_DisplayOption)
+		Format(buffer, maxlength, "%s | Restart Replay Bots",g_szChatPrefix );
+
+	else
+		if (action == TopMenuAction_SelectOption)
+		{
+			Admin_fixBot(param, 0);
+		}
+}
+public int TopMenuHandler4(Handle topmenu, TopMenuAction action, TopMenuObject object_id, int param, char[] buffer, int maxlength)
+{
+	if (action == TopMenuAction_DisplayOption)
+		Format(buffer, maxlength, "%s | Reload Map + Server.",g_szChatPrefix );
+
+	else
+		if (action == TopMenuAction_SelectOption)
+		{
+			Admin_ReloadMap(param, 0);
+		}
+}
+public Action Admin_ReloadMap(int client, int args)
 {
 	if (!g_bServerDataLoaded)
-		PrintToChat(client, "[%c%s%c] The server is still being loaded. Please try to reload the tier later.", MOSSGREEN, g_szChatPrefix, WHITE);
-	else
-		db_selectMapTier();
+	{
+		PrintToChat(client, "[%c%s%c] The server is still being loaded. Please try to reload the map later.", MOSSGREEN, g_szChatPrefix, WHITE);
+		return Plugin_Handled;
+	}
+	db_selectMapTier();
+	db_selectMapZones();
+	PrintToChat(client, "[%c%s%c] Map has been reloaded.", MOSSGREEN, g_szChatPrefix, WHITE);
+	return Plugin_Handled;
 }
 public Action Admin_insertMapTier(int client, int args)
 {
 	if (!IsValidClient(client))
 		return Plugin_Handled;
-
+	if (!g_bServerDataLoaded)
+	{
+		PrintToChat(client, "[%c%s%c] The server is still being loaded. Please try to add a tier later.", MOSSGREEN, g_szChatPrefix, WHITE);
+		return Plugin_Handled;
+	}
 	if (args < 2)
 	{
 		ReplyToCommand(client, "[CK] Usage: sm_addmaptier <ZoneGroup> <Tier>");
@@ -405,7 +438,11 @@ public Action Admin_insertTier(int client, int args)
 {
 	if (!IsValidClient(client))
 		return Plugin_Handled;
-
+	if (!g_bServerDataLoaded)
+	{
+		PrintToChat(client, "[%c%s%c] The server is still being loaded. Please try to add a tier later.", MOSSGREEN, g_szChatPrefix, WHITE);
+		return Plugin_Handled;
+	}
 	if (args < 1)
 	{
 		ReplyToCommand(client, "[CK] Usage: sm_at <Tier>");
@@ -418,7 +455,7 @@ public Action Admin_insertTier(int client, int args)
 		GetCmdArg(1, arg1, sizeof(arg1));
 		tier = StringToInt(arg1);
 		
-		if (tier < 8 || tier > 0) 
+		if (0 < tier < 8) 
 		{	
 			if(-1 < 0 < g_mapZoneGroupCount)
 			{
@@ -1390,4 +1427,31 @@ public Action Admin_DeleteCheckpoints(int client, int args)
 				g_fCheckpointTimesRecord[x][i][k] = 0.0;
 
 	db_deleteCheckpoints();
+}
+
+public Action Command_extend(int client, int args)
+{
+	if (!IsValidClient(client) || RateLimit(client))
+		return Plugin_Handled;
+	if (args < 1)
+	{
+		ReplyToCommand(client, "[SM] Usage: sm_extend <message>");
+		return Plugin_Handled;	
+	}
+	
+	char arg1[3];
+	GetCmdArg(1, arg1, sizeof(arg1));
+	int ExtendAmount = StringToInt(arg1);
+
+	PrintToChatAll("[%c%s%c] The current map has been extended by ADMIN.", MOSSGREEN, g_szChatPrefix, WHITE);
+	ExtendMapTimeLimit(ExtendAmount * 60);
+	return Plugin_Handled;
+}
+public Action Admin_fixBot(int client, int args)
+{
+	if (!IsValidClient(client) || RateLimit(client))
+		return Plugin_Handled;
+	botFix();
+	PrintToChatAll("[%c%s%c] Replay bots are being restarted.", MOSSGREEN, g_szChatPrefix, WHITE);	
+	return Plugin_Handled;
 }

@@ -37,7 +37,7 @@
 #pragma semicolon 1
 
 // Plugin info
-#define PLUGIN_VERSION "1.21.2.6.3"
+#define PLUGIN_VERSION "1.21.5.4"
 #define DEV_BUILD
 
 // Database definitions
@@ -108,7 +108,7 @@
 #define MAX_SKILLGROUPS 64
 
 // UI definitions
-#define HIDE_RADAR (1 << 12)
+#define HIDE_RADAR (1 << 12)	
 #define HIDE_CHAT ( 1<<7 )
 #define HIDE_ROUNDTIMER (1 << 13)
 #define HIDE_CROSSHAIR 1<<8
@@ -193,6 +193,23 @@ enum SkillGroup
 	String:RankNameColored[128],	// Skillgroup name with colors
 }
 
+enum StageRecord
+{
+	String:srPlayerName[45],
+	Float:srRunTime[16],
+	srCompletions,
+	bool:srLoaded,
+	Float:srStartSpeed
+}
+
+
+enum RecordType
+{
+	RT_MAP,
+	RT_STAGE,
+	RT_BONUS
+}
+
 /*===================================
 =            Plugin Info            =
 ===================================*/
@@ -213,6 +230,10 @@ public Plugin myinfo =
 bool stealthFound = false;
 //used to fix the hibernation bug
 bool hasStarted = false;
+//used to reload bots if the first player is joining a team. Bots break if there are no players connected
+//Or if they get loaded before players conenct, this way we load them only after the first player is in game!
+//in theory, but yeah... 
+bool botsLoaded = false;
 /*----------  Stages  ----------*/
 int g_Stage[MAXZONEGROUPS][MAXPLAYERS + 1];						// Which stage is the client in
 bool g_bhasStages; 												// Does the map have stages
@@ -477,6 +498,9 @@ ConVar g_hMultiServerMapcycle = null;							// Use multi server mapcycle
 ConVar g_hCustomHud = null;										// Use new style hud or old.
 ConVar g_hMultiServerAnnouncements = null;						// Announce latest records made on another server
 ConVar g_hDebugMode = null;										// Log Debug Messages
+ConVar g_hStagePoints = null;
+ConVar g_hFootsteps = null;
+
 
 /*----------  SQL Variables  ----------*/
 Handle g_hDb = null; 											// SQL driver
@@ -708,6 +732,8 @@ int g_PlayerRank[MAXPLAYERS + 1]; 								// Players server rank
 int g_MapRecordCount[MAXPLAYERS + 1];							// SR's the client has
 char g_pr_szName[MAX_PR_PLAYERS + 1][64];						// Used to update client's name in database
 char g_pr_szSteamID[MAX_PR_PLAYERS + 1][32];					// steamid of client being recalculated
+bool g_CalculatingPoints[MAXPLAYERS + 1];						// Used to ensure that 1 client cant have multiple recalcs in progress
+
 
 /*----------  Practice Mode  ----------*/
 float g_fCheckpointVelocity_undo[MAXPLAYERS + 1][3]; 			// Velocity at checkpoint that is on !undo
@@ -735,6 +761,38 @@ int g_Offset_m_fEffects = -1;
 
 // Rate Limiting Commands
 float g_fCommandLastUsed[MAXPLAYERS + 1];
+
+/*--------- Stage replays --------------*/
+//int g_StageRecStartFrame[MAXPLAYERS+1];	// Number of frames where the replay started being recorded
+//int g_StageRecStartAT[MAXPLAYERS+1];	// Ammount of additional teleport when the replay started being recorded
+//float g_fStageInitialPosition[MAXPLAYERS + 1][3]; 					// Replay start position
+//float g_fStageInitialAngles[MAXPLAYERS + 1][3]; 						// Replay start angle
+
+
+/*--------- Start Speed ----------------*/
+//float g_fRecordStartSpeed[MAXZONEGROUPS];
+//float g_fPlayerRectStartSpeed[MAXPLAYERS+1][MAXZONEGROUPS];
+float g_fPlayerStageRecStartSpeed[MAXPLAYERS+1][CPLIMIT];
+float g_fPlayerCurrentStartSpeed[MAXPLAYERS+1][CPLIMIT];
+
+
+/*-------- Stage Timers -------------*/
+bool g_bStageTimerRunning[MAXPLAYERS + 1];
+float g_fStageStartTime[MAXPLAYERS + 1];
+float g_fStagePlayerRecord[MAXPLAYERS + 1][64];
+bool g_bLoadingStages;
+int g_StageRecords[CPLIMIT][StageRecord];
+int g_StagePlayerRank[MAXPLAYERS+1][CPLIMIT];
+int g_RepeatStage[MAXPLAYERS+1] = {-1, ...};
+//bool g_bStageIgnorePrehop[CPLIMIT];
+//float g_fStageMaxVelocity[CPLIMIT];
+//bool g_bStageAllowHighJumps[CPLIMIT];
+
+//int g_PlayerJumpsInStage[MAXPLAYERS+1];
+//bool g_bPlayerIsJumping[MAXPLAYERS+1];
+
+//float g_vLastGroundTouch[MAXPLAYERS+1][3];
+
 
 /*=========================================
 =            Predefined arrays            =
@@ -881,34 +939,13 @@ public void OnMapStart()
 	int lastPiece = ExplodeString(g_szMapName, "/", mapPieces, sizeof(mapPieces), sizeof(mapPieces[]));
 	Format(g_szMapName, sizeof(g_szMapName), "%s", mapPieces[lastPiece - 1]);
 
-	/** Start Loading Server Settings:
-	* 1. Load zones (db_selectMapZones)
-	* 2. Get spawn locations (db_selectSpawnLocations)
-	* 3. Get map record time (db_GetMapRecord_Pro)
-	* 4. Get the amount of players that have finished the map (db_viewMapProRankCount)
-	* 5. Get the fastest bonus times (db_viewFastestBonus)
-	* 6. Get the total amount of players that have finsihed the bonus (db_viewBonusTotalCount)
-	* 7. Get map tier (db_selectMapTier)
-	* 8. Get record checkpoints (db_viewRecordCheckpointInMap)
-	* 9. Calculate average run time (db_CalcAvgRunTime)
-	* 10. Calculate averate bonus time (db_CalcAvgRunTimeBonus)
-	* 11. Calculate player count (db_CalculatePlayerCount)
-	* 12. Calculate player count with points (db_CalculatePlayersCountGreater0)  
-	* 13. Clear latest records (db_ClearLatestRecords)
-	* 14. Get dynamic timelimit (db_GetDynamicTimelimit)
-	* -> loadAllClientSettings
-	*/
-	if (!g_bRenaming && !g_bInTransactionChain/* && IsServerProcessing()*/)
-	{
-		
-		db_selectMapZones();
-	}
+	//Server Settings Load after the skillgroups are calculated.
 
 	//get map tag
 	ExplodeString(g_szMapName, "_", g_szMapPrefix, 2, 32);
 
 	//sv_pure 1 could lead to problems with the ckSurf models
-	ServerCommand("sv_pure 0");
+	ServerCommand("sv_pure 0;mp_respawn_on_death_ct 1;mp_respawn_on_death_t 1"); 
 	
 	//reload language files
 	LoadTranslations("ckSurf.phrases");
@@ -934,8 +971,7 @@ public void OnMapStart()
 	CreateTimer(0.1, CKTimer1, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	CreateTimer(1.0, CKTimer2, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	CreateTimer(10.0, tierTimer, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
-	CreateTimer(10.0, Timer_checkforrecord, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
-	
+	CreateTimer(60.0, Timer_checkforrecord, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	CreateTimer(1.5, animateTimer, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 	CreateTimer(3.0, advertTimer, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 
@@ -1094,7 +1130,9 @@ public void OnClientPutInServer(int client)
 	}
 	else
 		g_MVPStars[client] = 0;
-	
+	// Footsteps
+	if (!IsFakeClient(client))
+		SendConVarValue(client, g_hFootsteps, "0");
 	//client country
 	GetCountry(client);
 	
@@ -1108,7 +1146,7 @@ public void OnClientPutInServer(int client)
 	FixPlayerName(client);
 	
 	//position restoring
-	if (g_hcvarRestore.BoolValue && !g_bRenaming && !g_bInTransactionChain)
+	if (g_hcvarRestore.BoolValue && !g_bRenaming && !g_bInTransactionChain && g_bServerDataLoaded)
 		db_selectLastRun(client);
 	
 	//console info
@@ -1134,6 +1172,9 @@ public void OnClientPutInServer(int client)
 			8. Load client checkpoints (db_viewCheckpoints)
 		*/
 		g_bLoadingSettings[client] = true;
+		char msg[256];
+		Format(msg, 256, "Begun Loading: client %s", g_szSteamID[client]);
+		debug_msg(msg);
 		db_viewPersonalRecords(client, g_szSteamID[client], g_szMapName);
 	}
 }
@@ -1765,13 +1806,16 @@ public void OnPluginStart()
 		g_hHudSync = CreateHudSynchronizer();
 	//Get Server Tickate
 	g_Server_Tickrate = RoundFloat(1 / GetTickInterval());
-
+	
+	g_hFootsteps = FindConVar("sv_footsteps");
 	//language file
 	LoadTranslations("ckSurf.phrases");
 
 	CreateConVar("ckSurf_version", PLUGIN_VERSION, "ckSurf Version", FCVAR_DONTRECORD | FCVAR_SPONLY | FCVAR_REPLICATED | FCVAR_NOTIFY);
 
 	g_hDebugMode = CreateConVar("ck_debug_mode", "0", "Log Debug Messages", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	
+	g_hStagePoints = CreateConVar("ck_stage_finish_points", "0", "Whether to reward points to players after finishing a stage.", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
 	g_hChatPrefix = CreateConVar("ck_chat_prefix", "SURF", "Determines the prefix used for chat messages", FCVAR_NOTIFY);
 	g_hAutoZoneHeight = CreateConVar("ck_autozone_height", "66.0", "Sets the automatic height for autozoning", FCVAR_NOTIFY, true, 0.0, true, 500.0);
@@ -1991,7 +2035,11 @@ public void OnPluginStart()
 
 	//RegConsoleCmd("sm_rtimes", Command_rTimes, "[%s] spawns a usp silencer", g_szChatPrefix);
 
-	//client commands
+	//client commands Command_Repeat
+	RegConsoleCmd("sm_repeat", Command_Repeat, "[ckSurf] Prints a players map record in chat");
+	RegConsoleCmd("sm_cptop", Client_StageTop, "[ckSurf] Prints a players map record in chat");
+	RegConsoleCmd("sm_stats", Client_MapStats, "[ckSurf] Prints a players map record in chat");
+	RegConsoleCmd("sm_stats", Client_MapStats, "[ckSurf] Prints a players map record in chat");
 	RegConsoleCmd("sm_mrank", Command_SelectMapTime, "[ckSurf] Prints a players map record in chat");
 	RegConsoleCmd("sm_triggers", Command_ToggleTriggers, "[ckSurf] Toggle display of map triggers");
 	RegConsoleCmd("sm_showtriggers", Command_ToggleTriggers, "[ckSurf] Toggle display of map triggers");
@@ -2032,7 +2080,7 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_topSurfers", Client_Top, "[ckSurf] displays top rankings (Top 100 Players, Top 50 overall)");
 	RegConsoleCmd("sm_bonustop", Client_BonusTop, "[ckSurf] displays top rankings of the bonus");
 	RegConsoleCmd("sm_btop", Client_BonusTop, "[ckSurf] displays top rankings of the bonus");
-	RegConsoleCmd("sm_stop", Client_Stop, "[ckSurf] stops your timer");
+	RegConsoleCmd("sm_stop", Command_Stop, "[ckSurf] stops your timer");
 	RegConsoleCmd("sm_ranks", Client_Ranks, "[ckSurf] prints in chat the available player ranks");
 	RegConsoleCmd("sm_pause", Client_Pause, "[ckSurf] on/off pause (timer on hold and movement frozen)");
 	RegConsoleCmd("sm_showsettings", Client_Showsettings, "[ckSurf] shows ckSurf server settings");
@@ -2133,7 +2181,7 @@ public void OnPluginStart()
 	RegAdminCmd("sm_addmaptier", Admin_insertMapTier, g_AdminMenuFlag, "[ckSurf] Changes maps tier");
 	RegAdminCmd("sm_amt", Admin_insertMapTier, g_AdminMenuFlag, "[ckSurf] Changes maps tier");
 	RegAdminCmd("sm_at", Admin_insertTier, g_AdminMenuFlag, "[ckSurf] Changes maps tier");
-	RegAdminCmd("sm_at", Admin_ReloadTier, ADMFLAG_GENERIC, "[ckSurf] Changes maps tier");
+	RegAdminCmd("sm_reload", Admin_ReloadMap, ADMFLAG_GENERIC, "[ckSurf] Reloads Map Settings");
 	
 	RegAdminCmd("sm_addspawn", Admin_insertSpawnLocation, g_AdminMenuFlag, "[ckSurf] Changes the position !r takes players to");
 	RegAdminCmd("sm_delspawn", Admin_deleteSpawnLocation, g_AdminMenuFlag, "[ckSurf] Removes custom !r position");
@@ -2169,6 +2217,10 @@ public void OnPluginStart()
 	HookEvent("player_team", Event_OnPlayerTeam, EventHookMode_Post);
 	HookEvent("player_team", Event_OnPlayerTeamJoin, EventHookMode_Pre);
 	HookEvent("player_disconnect", Event_PlayerDisconnect, EventHookMode_Pre);
+	AddTempEntHook("Shotgun Shot", Hook_ShotgunShot);
+
+	// Footsteps
+	AddNormalSoundHook(Hook_FootstepCheck);
 
 	//mapcycle array
 	int arraySize = ByteCountToCells(PLATFORM_MAX_PATH);
