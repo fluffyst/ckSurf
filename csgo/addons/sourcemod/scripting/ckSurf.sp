@@ -187,10 +187,15 @@ enum MapZone
 
 enum SkillGroup
 {
-	PointReq,						// Points required for next skillgroup
-	String:NameColor[32],			// Color to use for name if colored chatnames is turned on
-	String:RankName[128],			// Skillgroup name without colors
-	String:RankNameColored[128],	// Skillgroup name with colors
+	PointsBot,
+	PointsTop,
+	PointReq,
+	RankBot,
+	RankTop,
+	RankReq,
+	String:RankName[128],
+	String:RankNameColored[128],
+	String:NameColour[32]
 }
 
 enum StageRecord
@@ -795,6 +800,20 @@ int g_RepeatStage[MAXPLAYERS+1] = {-1, ...};
 
 // info_teleport_destinations
 Handle g_hDestinations;
+
+// sm_brank
+int g_totalBonusFinishes[MAXPLAYERS + 1];
+
+/*----------  KSF Points System  ----------*/
+float g_Group1Pc = 0.03125;
+float g_Group2Pc = 0.0625;
+float g_Group3Pc = 0.125;
+float g_Group4Pc = 0.25;
+float g_Group5Pc = 0.5;
+
+// Map Improvement command
+char g_szMiMapName[MAXPLAYERS + 1][128];
+int g_MiType[MAXPLAYERS + 1];
 
 
 /*=========================================
@@ -1860,8 +1879,6 @@ public void OnPluginStart()
 	g_hAutohealing_Hp = CreateConVar("ck_autoheal", "50", "Sets HP amount for autohealing (requires ck_godmode 0)", FCVAR_NOTIFY, true, 0.0, true, 100.0);
 	g_hChallengePoints = CreateConVar("ck_challenge_points", "1", "on/off - Allows players to bet points on their challenges", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_hDynamicTimelimit = CreateConVar("ck_dynamic_timelimit", "0", "on/off - Sets a suitable timelimit by calculating the average run time (This method requires ck_map_end 1, greater than 5 map times and a default timelimit in your server config for maps with less than 5 times", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	g_hExtraPoints = CreateConVar("ck_ranking_extra_points_improvements", "15.0", "Gives players x extra points for improving their time", FCVAR_NOTIFY, true, 0.0, true, 100.0);
-	g_hExtraPoints2 = CreateConVar("ck_ranking_extra_points_firsttime", "50.0", "Gives players x extra points for finishing a map for the first time", FCVAR_NOTIFY, true, 0.0, true, 100.0);
 	g_hWelcomeMsg = CreateConVar("ck_welcome_msg", " {yellow}>>{default} {grey}Welcome! This server is using {lime}ckSurf", "Welcome message (supported color tags: {default}, {red}, {lightred}, {darkred}, {bluegray}, {blue}, {darkblue}, {purple}, {orchid}, {yellow}, {gold}, {lightgreen}, {green}, {lime}, {gray}, {gray2})", FCVAR_NOTIFY);
 	g_hChecker = CreateConVar("ck_zone_checker", "5.0", "The duration in seconds when the beams around zones are refreshed", FCVAR_NOTIFY);
 	g_hZoneDisplayType = CreateConVar("ck_zone_drawstyle", "1", "0 = Do not display zones, 1 = display the lower edges of zones, 2 = display whole zones", FCVAR_NOTIFY);
@@ -2059,6 +2076,7 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_stats", Client_MapStats, "[ckSurf] Prints a players map record in chat");
 	RegConsoleCmd("sm_stats", Client_MapStats, "[ckSurf] Prints a players map record in chat");
 	RegConsoleCmd("sm_mrank", Command_SelectMapTime, "[ckSurf] Prints a players map record in chat");
+	RegConsoleCmd("sm_brank", Command_SelectBonusTime, "[surftimer] prints a players bonus record in chat.");
 	RegConsoleCmd("sm_triggers", Command_ToggleTriggers, "[ckSurf] Toggle display of map triggers");
 	RegConsoleCmd("sm_showtriggers", Command_ToggleTriggers, "[ckSurf] Toggle display of map triggers");
 	RegConsoleCmd("sm_mapmusic", Client_mapmusic, "[ckSurf] Stops Map Music");
@@ -2091,7 +2109,8 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_helpmenu", Client_Help, "[ckSurf] help menu which displays all ckSurf commands");
 	RegConsoleCmd("sm_help", Client_Help, "[ckSurf] help menu which displays all ckSurf commands");
 	RegConsoleCmd("sm_profile", Client_Profile, "[ckSurf] opens a player profile");
-	RegConsoleCmd("sm_rank", Client_Profile, "[ckSurf] opens a player profile");
+	RegConsoleCmd("sm_rank", Client_SelectRank, "[ckSurf] displays a players server rank in the chat");
+	RegConsoleCmd("sm_mi", Command_MapImprovement, "[surftimer] opens map improvement points panel for map");
 	RegConsoleCmd("sm_options", Client_OptionMenu, "[ckSurf] opens options menu");
 	RegConsoleCmd("sm_top", Client_Top, "[ckSurf] displays top rankings (Top 100 Players, Top 50 overall)");
 	RegConsoleCmd("sm_t", Client_Top, "[ckSurf] displays top rankings (Top 100 Players, Top 50 overall)");
@@ -2142,7 +2161,6 @@ public void OnPluginStart()
 	RegConsoleCmd("sm_tier", Command_Tier, "[ckSurf] Prints information on the current map");
 	RegConsoleCmd("sm_maptier", Command_Tier, "[ckSurf] Prints information on the current map");
 	RegConsoleCmd("sm_mapinfo", Command_Tier, "[ckSurf] Prints information on the current map");
-	RegConsoleCmd("sm_mi", Command_Tier, "[ckSurf] Prints information on the current map");
 	RegConsoleCmd("sm_m", Command_Tier, "[ckSurf] Prints information on the current map");
 	RegConsoleCmd("sm_difficulty", Command_Tier, "[ckSurf] Prints information on the current map");
 	RegConsoleCmd("sm_btier", Command_bTier, "[ckSurf] Prints tier information on current map's bonuses");

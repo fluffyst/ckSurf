@@ -1982,26 +1982,39 @@ public Action Client_Help(int client, int args)
 
 public Action Client_Ranks(int client, int args)
 {
-	if (!IsValidClient(client) || RateLimit(client))
-		return Plugin_Handled;
+	if (IsValidClient(client))
+		displayRanksMenu(client);
+	return Plugin_Handled;
+}
 
+public void displayRanksMenu(int client)
+{
+	Menu menu = CreateMenu(ShowRanksMenuHandler);
+	SetMenuTitle(menu, "Chat Ranks");
 	char ChatLine[512];
-	Format(ChatLine, 512, "[%c%s%c] ", MOSSGREEN, g_szChatPrefix, WHITE);
-	int i, RankValue[SkillGroup];
-	for (i = 0; i < GetArraySize(g_hSkillGroups); i++)
+	int RankValue[SkillGroup];
+	for (int i = 0; i < GetArraySize(g_hSkillGroups); i++)
 	{
 		GetArrayArray(g_hSkillGroups, i, RankValue[0]);
-
-		if (i != 0 && i % 3 == 0)
-		{
-			CPrintToChat(client, ChatLine);
-			PrintToConsole(client, ChatLine);
-			Format(ChatLine, 512, " ");
-		}
-		Format(ChatLine, 512, "%s%s%c (%ip)   ", ChatLine, RankValue[RankNameColored], WHITE, RankValue[PointReq]);
+		if (RankValue[PointsBot] > -1 && RankValue[PointsTop] > -1)
+			Format(ChatLine, 512, "%i-%i Points: %s", RankValue[PointsBot], RankValue[PointsTop], RankValue[RankName]);
+		else if (RankValue[PointReq] > -1)
+			Format(ChatLine, 512, "%i Points: %s", RankValue[PointReq], RankValue[RankName]);
+		else if (RankValue[RankBot] > 0 && RankValue[RankTop] > 0)
+			Format(ChatLine, 512, "Rank %i-%i: %s", RankValue[RankBot], RankValue[RankTop], RankValue[RankName]);
+		else
+			Format(ChatLine, 512, "Rank %i: %s", RankValue[RankReq], RankValue[RankName]);
+		
+		AddMenuItem(menu, "", ChatLine, ITEMDRAW_DISABLED);
 	}
-	CPrintToChat(client, ChatLine);
-	return Plugin_Handled;
+	SetMenuOptionFlags(menu, MENUFLAG_BUTTON_EXIT);
+	DisplayMenu(menu, client, MENU_TIME_FOREVER);
+}
+
+public int ShowRanksMenuHandler(Menu menu, MenuAction action, int param1, int param2)
+{
+	if (action == MenuAction_End)
+		delete menu;
 }
 
 public Action Client_Profile(int client, int args)
@@ -3154,7 +3167,7 @@ public Action Command_ToggleTriggers(int client, int args)
 
 public Action Command_SelectMapTime(int client, int args)
 {
-	if (!IsValidClient(client) || RateLimit2(client))
+	if (!IsValidClient(client) || RateLimit(client))
 		return Plugin_Handled;
 
 	if (args == 0)
@@ -3213,6 +3226,114 @@ public Action Command_SelectMapTime(int client, int args)
 	}
 	return Plugin_Handled;
 }
+
+public Action Command_SelectBonusTime(int client, int args)
+{
+	if (!IsValidClient(client) || RateLimit(client))
+		return Plugin_Handled;
+
+	if (args == 0)
+	{
+		if (g_mapZoneGroupCount > 2)
+		{
+			CReplyToCommand(client, "%t", "BrankUsage", g_szChatPrefix);
+			return Plugin_Handled;
+		}
+		else if (g_mapZoneGroupCount == 1)
+		{
+			CReplyToCommand(client, "%t", "BrankBonusNotFound", g_szChatPrefix);
+			return Plugin_Handled;
+		}
+
+		db_selectBonusRank(client, g_szSteamID[client], g_szMapName, 1);
+		return Plugin_Handled;
+	}
+	else
+	{
+		char arg1[128];
+		char arg2[128];
+		GetCmdArg(1, arg1, sizeof(arg1));
+		GetCmdArg(2, arg2, sizeof(arg2));
+
+		// bool bPlayerFound = false;
+		char szSteamId2[32];
+		char szName[MAX_NAME_LENGTH];
+
+		if (StrContains(arg1, "#", false) != -1) // bonus number
+		{
+			ReplaceString(arg1, 128, "#", "", false);
+			int bonus = StringToInt(arg1);
+
+			if (bonus > g_totalBonusCount + 1)
+			{
+				CReplyToCommand(client, "%t", "BrankBonusNotFound", g_szChatPrefix);
+				return Plugin_Handled;
+			}
+
+			if (!arg2[0]) // no mapname or player name
+				db_selectBonusRank(client, g_szSteamID[client], g_szMapName, bonus);
+			else
+			{
+				if (StrContains(arg2, "surf_", false) != -1) // sm_brank #x surf_y
+					db_selectBonusRank(client, g_szSteamID[client], arg2, bonus);
+				else // sm_brank #x player
+				{
+					for (int i = 1; i <= MaxClients; i++)
+					{
+						if (IsValidClient(i))
+						{
+							GetClientName(i, szName, MAX_NAME_LENGTH);
+							StringToUpper(szName);
+							StringToUpper(arg2);
+							if ((StrContains(szName, arg2) != -1))
+							{
+								// bPlayerFound = true;
+								GetClientAuthId(i, AuthId_Steam2, szSteamId2, MAX_NAME_LENGTH, true);
+								break;
+							}
+						}
+					}
+					db_selectBonusRank(client, szSteamId2, g_szMapName, bonus);
+				}
+			}
+
+			return Plugin_Handled;
+		}
+		else // sm_brank player else it will contain a clients name
+		{
+			if (g_mapZoneGroupCount > 2)
+			{
+				CReplyToCommand(client, "%t", "BrankUsagePlayer", g_szChatPrefix);
+				return Plugin_Handled;
+			}
+			else if (g_mapZoneGroupCount == 1)
+			{
+				CReplyToCommand(client, "%t", "BrankBonusNotFound", g_szChatPrefix);
+				return Plugin_Handled;
+			}
+
+			for (int i = 1; i <= MaxClients; i++)
+			{
+				if (IsValidClient(i))
+				{
+					GetClientName(i, szName, MAX_NAME_LENGTH);
+					StringToUpper(szName);
+					StringToUpper(arg1);
+					if ((StrContains(szName, arg1) != -1))
+					{
+						// bPlayerFound = true;
+						GetClientAuthId(i, AuthId_Steam2, szSteamId2, MAX_NAME_LENGTH, true);
+						break;
+					}
+				}
+			}
+		}
+		db_selectBonusRank(client, szSteamId2, g_szMapName, 1);
+	}
+
+	return Plugin_Handled;
+}
+
 public Action Client_StageTop(int client, int args)
 {
 	if (!g_bhasStages)
@@ -3361,5 +3482,69 @@ public Action Command_Repeat(int client, int args) {
 
 	g_RepeatStage[client] = g_Stage[0][client];
 	PrintToChat(client, "[%c%s%c] Repeating mode is now enabled, repeating stage %d", MOSSGREEN, WHITE,g_szChatPrefix, g_RepeatStage[client]);
+	return Plugin_Handled;
+}
+
+public Action Client_SelectRank(int client, int args)
+{
+	if (!IsValidClient(client) || RateLimit(client))
+		return Plugin_Handled;
+
+	if (args == 0) // Self Rank
+		db_selectPlayerRank(client, 0, g_szSteamID[client]);
+	else
+	{
+		char arg1[128];
+		GetCmdArg(1, arg1, sizeof(arg1));
+		if (StrContains(arg1, "@", false) != -1) // Rank Number
+		{
+			int arg;
+			ReplaceString(arg1, 128, "@", "", false);
+			arg = StringToInt(arg1);
+			db_selectPlayerRank(client, arg, "none");
+		}
+		else // Player Name
+		{
+			bool bPlayerFound = false;
+			char szName[128];
+			for (int i = 1; i <= MaxClients; i++)
+			{
+				if (IsValidClient(i))
+				{
+					GetClientName(i, szName, MAX_NAME_LENGTH);
+					StringToUpper(szName);
+					StringToUpper(arg1);
+					if (StrContains(szName, arg1) != -1)
+					{
+						char szSteamId[32];
+						GetClientAuthId(i, AuthId_Steam2, szSteamId, MAX_NAME_LENGTH, true);
+						db_selectPlayerRank(i, 0, szSteamId);
+						bPlayerFound = true;
+						break;
+					}
+				}
+			}
+			if (!bPlayerFound)
+				db_selectPlayerRankUnknown(client, arg1);
+		}
+	}
+	return Plugin_Handled;
+}
+
+public Action Command_MapImprovement(int client, int args)
+{
+	if (!IsValidClient(client) || RateLimit(client))
+		return Plugin_Handled;
+
+	g_MiType[client] = 0;
+	if (args == 0) // Self Rank
+		db_selectMapImprovement(client, g_szMapName);
+	else
+	{
+		char arg1[128];
+		GetCmdArg(1, arg1, sizeof(arg1));
+		db_selectMapImprovement(client, arg1);
+	}
+
 	return Plugin_Handled;
 }

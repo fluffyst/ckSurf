@@ -807,5 +807,19 @@
 		"#format"   "{1:c},{2:s},{3:c},{4:c},{5:i},{6:c},{7:s},{8:c},{9:c},{10:s},{11:c},{12:c},{13:s}"
 		"en"        "[{1}{2}{3}] {4}Stage {5} {6}{7} {8}({9}SR {10}{11}). Missing PB by {12}{13}"
 	}
-
+	"BrankUsage"
+	{
+		"#format"	"{1:s}"
+		"en"		"[{lightgreen}{1}{default}] Usage: sm_brank #b"
+	}
+	"BrankBonusNotFound"
+	{
+		"#format"	"{1:s}"
+		"en"		"[{lightgreen}{1}{default}] Bonus not found"
+	}
+	"BrankUsagePlayer"
+	{
+		"#format"	"{1:s}"
+		"en"		"[{lightgreen}{1}{default}] Usage: sm_brank #b player"
+	}
 }

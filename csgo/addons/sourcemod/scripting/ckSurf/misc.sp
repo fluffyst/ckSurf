@@ -972,26 +972,7 @@ public void PrintConsoleInfo(int client)
 	PrintToConsole(client, "Start practice mode with !tele / !prac");
 	PrintToConsole(client, "Undo failed checkpoints with !undo");
 	PrintToConsole(client, "Get back to normal mode with !n / !normal");
-	PrintToConsole(client, "");
-	PrintToConsole(client, "Skill groups:");
-	char ChatLine[512];
-	int i, RankValue[SkillGroup];
-	for (i = 0; i < GetArraySize(g_hSkillGroups); i++)
-	{
-		GetArrayArray(g_hSkillGroups, i, RankValue[0]);
-
-		if (i != 0 && i % 5 == 0)
-		{
-			PrintToConsole(client, ChatLine);
-			Format(ChatLine, 512, "");	
-		}
-
-		Format(ChatLine, 512, "%s%s (%ip)   ", ChatLine, RankValue[RankName], RankValue[PointReq]);
-	}
-	PrintToConsole(client, ChatLine);
-	PrintToConsole(client, "");
 	PrintToConsole(client, "-----------------------------------------------------------------------------------------------------------");
-	PrintToConsole(client, " ");
 	return;
 }
 
@@ -2230,42 +2211,83 @@ public void SetSkillGroups()
 			else
 				ClearArray(g_hSkillGroups);
 
-			char sRankName[128], sRankNameColored[128],sNameColor[32]; //color string size is "enough"
+			char sRankName[128], sRankNameColored[128], sNameColour[32], sBuffer[32];
 			float fPercentage;
-			int points;
+			int points, pointsBot, pointsTop, rankBot, rankTop, rank, i = 0;
 			do
 			{
-				// Get section as Rankname
-				KvGetString(hKeyValues, "name", sRankName, 128);
-				KvGetString(hKeyValues, "name", sRankNameColored, 128);
-				KvGetString(hKeyValues, "rankColor", sNameColor, 32);
+				i++;
+				// Get Rankname & namecolour
+				KvGetString(hKeyValues, "rankTitle", sRankName, 128);
+				KvGetString(hKeyValues, "rankTitle", sRankNameColored, 128);
+				KvGetString(hKeyValues, "nameColour", sNameColour, 32, "{default}");
+				
+				// Get points requirement
+				points = -1;
+				pointsBot = -1;
+				pointsTop = -1;
+
+				KvGetString(hKeyValues, "points", sBuffer, 32, "invalid");
+
+				// Is the points requirement a range?
+				if (StrContains(sBuffer, "-") != -1)
+				{
+					char sBuffer2[2][32];
+					ExplodeString(sBuffer, "-", sBuffer2, 2, 32);
+					pointsBot = StringToInt(sBuffer2[0]);
+					pointsTop = StringToInt(sBuffer2[1]);
+				}
+				else if (!StrEqual(sBuffer, "invalid"))
+					points = StringToInt(sBuffer);	
 
 				// Get percentage
-				fPercentage = KvGetFloat(hKeyValues, "percentage");
+				fPercentage = KvGetFloat(hKeyValues, "percentage", 0.0);
 
-				// Calculate required points for the rank
-				if (fPercentage < 0.0)
-					points = 0;
-				else
+				// Calculate percentage requirement
+				if (fPercentage > 0.0)
 					points = RoundToCeil(MaxPoints * fPercentage);
 
+				// Get rank requirement
+				rank = -1;
+				rankBot = -1;
+				rankTop = -1;
+
+				KvGetString(hKeyValues, "rank", sBuffer, 32, "invalid");
+
+				// Is the rank requirement a range?
+				if (StrContains(sBuffer, "-") != -1)
+				{
+					char sBuffer2[2][32];
+					ExplodeString(sBuffer, "-", sBuffer2, 2, 32);
+					rankBot = StringToInt(sBuffer2[0]);
+					rankTop = StringToInt(sBuffer2[1]);
+				}
+				else if (!StrEqual(sBuffer, "invalid"))
+					rank = StringToInt(sBuffer);
+
+				// Ignore invalid entries
+				if (pointsBot == -1 && pointsTop == -1 && points == -1 && fPercentage == 0.0 && rankBot == -1 && rankTop == -1 && rank == -1)
+				{
+					LogError("Skillgroup %i is invalid", i);
+					continue;
+				}
+
+				// Store results
 				RankValue[PointReq] = points;
+				RankValue[PointsBot] = pointsBot;
+				RankValue[PointsTop] = pointsTop;
+				RankValue[RankBot] = rankBot;
+				RankValue[RankTop] = rankTop;
+				RankValue[RankReq] = rank;
 
-				// Replace colors on name
-				//addColorToString(sRankNameColored, 128);
-
-				// Get player name color
-				//I cringe reading this...
-
-				// Remove colors from then non-colored rank name
-				normalizeChatString(sRankName, 128);
+				// Remove colors from rank name
+				CRemoveColors(sRankName, 128);
 
 				Format(RankValue[RankName], 128, "%s", sRankName);
 				Format(RankValue[RankNameColored], 128, "%s", sRankNameColored);
-				Format(RankValue[NameColor], 32 ,"%s",sNameColor);
+				Format(RankValue[NameColour], 32, "%s", sNameColour);
 
 				PushArrayArray(g_hSkillGroups, RankValue[0]);
-
 			} while (KvGotoNextKey(hKeyValues));
 		}
 		if (hKeyValues != null)
@@ -2287,19 +2309,25 @@ public void SetPlayerRank(int client)
 		return;
 	}
 
-	int RankValue[SkillGroup];
-	int index = GetSkillgroupFromPoints(g_pr_points[client]);
-
 	if (g_iTitleInUse[client] == -1)
 	{
 		// Player is not using a title
 		if (GetConVarBool(g_hPointSystem))
 		{
-			GetArrayArray(g_hSkillGroups, index, RankValue[0]);
+			char szName[MAX_NAME_LENGTH];
+			GetClientName(client, szName, sizeof(szName));
+			CRemoveColors(szName, sizeof(szName));
 
-			Format(g_pr_rankname[client], 128, "[%s]", RankValue[RankName]);
-			Format(g_pr_chat_coloredrank[client], 128, "[%s%c]", RankValue[RankNameColored], WHITE);
-			Format(g_pr_rankColor[client],32,"%s", RankValue[NameColor]);
+			int rank = g_PlayerRank[client];
+			int points = g_pr_points[client];
+
+			int RankValue[SkillGroup];
+			int index = GetSkillgroupIndex(rank, points);
+			GetArrayArray(g_hSkillGroups, index, RankValue[0]);
+			
+			Format(g_pr_chat_coloredrank[client], 128, RankValue[RankNameColored]);
+			Format(g_pr_rankname[client], 128, RankValue[RankName]);
+			Format(g_pr_rankColor[client], 32, RankValue[NameColour]);
 		}
 	}
 	else
@@ -2319,39 +2347,62 @@ public void SetPlayerRank(int client)
 	}
 }
 
-public int GetSkillgroupFromPoints(int points)
+public int GetSkillgroupIndex(int rank, int points)
 {
 	int size = GetArraySize(g_hSkillGroups);
 	for (int i = 0; i < size; i++)
 	{
 		int RankValue[SkillGroup];
 		GetArrayArray(g_hSkillGroups, i, RankValue[0]);
-
-		if (i == (size-1)) // Last rank
+		if (RankValue[RankReq] > -1)
 		{
-			if (points >= RankValue[PointReq])
-			{
+			if (rank == RankValue[RankReq])
 				return i;
-			}
 		}
-		else if (i == 0) // First rank
+		else if (RankValue[RankBot] > -1 && RankValue[RankTop] > -1)
 		{
-			if (points <= RankValue[PointReq])
-			{
+			if (rank >= RankValue[RankBot] && rank < RankValue[RankTop])
 				return i;
-			}
 		}
-		else // Mid ranks
+		else if (RankValue[PointsBot] > -1 && RankValue[PointsTop] > -1)
 		{
-			int RankValueNext[SkillGroup];
-			GetArrayArray(g_hSkillGroups, (i+1), RankValueNext[0]);
-			if (points > RankValue[PointReq] && points <= RankValueNext[PointReq])
-			{
+			if (points >= RankValue[PointsBot] && points < RankValue[PointsTop])
 				return i;
+		}
+		else if (RankValue[PointReq] > -1)
+		{
+			if (i == (size - 1)) // Last Rank
+			{
+				if (points >= RankValue[PointReq])
+					return i;
+			}
+			else if (i == 0) // First Rank
+			{
+				if (points <= RankValue[PointReq])
+					return i;
+			}
+			else // Mid ranks
+			{
+				int RankValueNext[SkillGroup];
+				GetArrayArray(g_hSkillGroups, (i+1), RankValueNext[0]);
+				if (RankValueNext[PointReq] > -1)
+				{
+					if (points >= RankValue[PointReq] && points < RankValueNext[PointReq])
+						return i;
+				}
+				else if (RankValueNext[RankReq] > -1)
+				{
+					if (points >= RankValue[PointReq] && rank < RankValueNext[RankReq])
+						return i;
+				}
+				else if (RankValueNext[RankTop] > -1)
+				{
+					if (points >= RankValue[PointReq] && rank < RankValueNext[RankTop])
+						return i;
+				}
 			}
 		}
 	}
-	// Return 0 if not found
 	return 0;
 }
 
@@ -3479,18 +3530,7 @@ public bool RateLimit(int client)
 	g_fCommandLastUsed[client] = GetGameTime();
 	return false;
 }
-public bool RateLimit2(int client)
-{
-	float currentTime = GetGameTime();
-	if (currentTime - g_fCommandLastUsed[client] < 2)
-	{
-		PrintToChat(client, "[%c%s%c] Please wait before using this command again", MOSSGREEN, g_szChatPrefix, WHITE);
-		return true;
-	}
 
-	g_fCommandLastUsed[client] = GetGameTime();
-	return false;
-}
 public void botFix()
 {
 	for (int i = 1; i <= MaxClients; i++)
