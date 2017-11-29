@@ -793,6 +793,9 @@ int g_RepeatStage[MAXPLAYERS+1] = {-1, ...};
 
 //float g_vLastGroundTouch[MAXPLAYERS+1][3];
 
+// info_teleport_destinations
+Handle g_hDestinations;
+
 
 /*=========================================
 =            Predefined arrays            =
@@ -1014,6 +1017,15 @@ public void OnMapStart()
 	{
 		SDKHook(iEnt, SDKHook_Touch, OnTouchPushTrigger);
 	}
+
+	// info_teleport_destinations
+	iEnt = -1;
+	if (g_hDestinations != null)
+		CloseHandle(g_hDestinations);
+	
+	g_hDestinations = CreateArray(128);
+	while ((iEnt = FindEntityByClassname(iEnt, "info_teleport_destination")) != -1)
+		PushArrayCell(g_hDestinations, iEnt);
 	
 	//OnConfigsExecuted();
 
@@ -1054,6 +1066,12 @@ public void OnMapEnd()
 	g_hBotTrail[1] = null;
 	
 	Format(g_szMapName, sizeof(g_szMapName), "");
+
+	// info_teleport_destinations
+	if (g_hDestinations != null)
+		CloseHandle(g_hDestinations);
+
+	g_hDestinations = null;
 }
 
 public void OnConfigsExecuted()

@@ -518,6 +518,15 @@ public Action Event_OnRoundStart(Event event, const char[] name, bool dontBroadc
 		SDKHook(iEnt, SDKHook_Touch, OnTouchPushTrigger);
 	}
 
+	// info_teleport_destinations
+	iEnt = -1;
+	if (g_hDestinations != null)
+		CloseHandle(g_hDestinations);
+		
+	g_hDestinations = CreateArray(128);
+	while ((iEnt = FindEntityByClassname(iEnt, "info_teleport_destination")) != -1)
+		PushArrayCell(g_hDestinations, iEnt);
+
 	RefreshZones();
 
 	g_bRoundEnd = false;

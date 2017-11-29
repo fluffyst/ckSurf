@@ -190,14 +190,38 @@ public void teleportClient(int client, int zonegroup, int zone, bool stopTime)
 				}
 				else // Teleport normally
 				{
+					bool destinationFound = false;
+					int entity;
+					float origin[3], ang[3];
+					for (int i = 0; i < GetArraySize(g_hDestinations); i++)
+					{
+						entity = GetArrayCell(g_hDestinations, i);
+						if (IsValidEntity(entity))
+						{
+							GetEntPropVector(entity, Prop_Send, "m_vecOrigin", origin);
+							if (IsInsideZone(origin) == destinationZoneId)
+							{
+								destinationFound = true;
+								GetEntPropVector(entity, Prop_Send, "m_angRotation", ang);
+								break;
+							}
+						}
+					}
 					// Set client speed to 0
 					SetEntPropVector(client, Prop_Data, "m_vecVelocity", view_as<float>( { 0.0, 0.0, -100.0 } ));
 
-					float fLocation[3];
-					Array_Copy(g_mapZones[destinationZoneId][CenterPoint], fLocation, 3); 
-
 					// Teleport
-					teleportEntitySafe(client, fLocation, NULL_VECTOR, view_as<float>( { 0.0, 0.0, -100.0 } ), stopTime);
+					if (destinationFound)
+					{
+						teleportEntitySafe(client, origin, ang, view_as<float>( { 0.0, 0.0, -100.0 } ), stopTime);
+					}
+					else
+					{
+						float fLocation[3];
+						Array_Copy(g_mapZones[destinationZoneId][CenterPoint], fLocation, 3); 
+						teleportEntitySafe(client, fLocation, NULL_VECTOR, view_as<float>( { 0.0, 0.0, -100.0 } ), stopTime);
+					}
+
 				}
 			}
 			else
