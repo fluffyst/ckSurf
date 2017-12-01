@@ -1862,24 +1862,21 @@ public void ProfileMenu(int client, int args)
 		char szName2[MAX_NAME_LENGTH];
 		for (int i = 1; i <= MaxClients; i++)
 		{
-			if (IsValidClient(i))
+			if (IsValidClient(i) && !IsFakeClient(i))
 			{
 				GetClientName(i, szName, MAX_NAME_LENGTH);
-				StringToUpper(szName);
 				Format(szName2, MAX_NAME_LENGTH, "%s", g_szProfileName[client]);
-				if ((StrContains(szName, szName2) != -1))
+				if ((StrContains(szName, szName2, false) != -1))
 				{
 					bPlayerFound = true;
 					GetClientAuthId(i, AuthId_Steam2, szSteamId2, MAX_NAME_LENGTH, true);
+					Format(g_szProfileName[client], sizeof(g_szProfileName), szName2);
 					//GetClientAuthString(i, szSteamId2, 32);
-					continue;
+					break;
 				}
 			}
 		}
-		if (bPlayerFound)
-			db_viewPlayerRank(client, szSteamId2);
-		else
-			db_viewPlayerProfile1(client, g_szProfileName[client]);
+		db_viewPlayerProfile(client, szSteamId2, bPlayerFound, g_szProfileName[client]);
 	}
 }
 
@@ -1908,7 +1905,8 @@ public int ProfileSelectMenuHandler(Menu menu, MenuAction action, int param1, in
 					char szSteamId[32];
 					GetClientAuthId(i, AuthId_Steam2, szSteamId, MAX_NAME_LENGTH, true);
 					//GetClientAuthString(i, szSteamId, 32);	
-					db_viewPlayerRank(param1, szSteamId);
+					db_viewPlayerProfile(param1, szSteamId, true, szPlayerName);
+					break;
 				}
 			}
 		}
@@ -3195,7 +3193,23 @@ public Action Command_SelectMapTime(int client, int args)
 		{
 			int rank;
 			ReplaceString(arg1, 128, "@", "", false);
-			rank = StringToInt(arg1);
+			if (StrContains(arg1, "g", false) != -1) // Group
+			{
+				ReplaceString(arg1, 128, "g", "", false);
+				int group = StringToInt(arg1);
+				if (group == 1)
+					rank = g_G1Top;
+				else if (group == 2)
+					rank = g_G2Top;
+				else if (group == 3)
+					rank = g_G3Top;
+				else if (group == 4)
+					rank = g_G4Top;
+				else if (group == 5)
+					rank = g_G5Top;
+			}
+			else
+				rank = StringToInt(arg1);
 
 			if (!arg2[0])
 				db_selectMapRankUnknown(client, g_szMapName, rank);

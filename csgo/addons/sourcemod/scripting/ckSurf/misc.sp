@@ -1478,6 +1478,8 @@ public void SetClientDefaults(int client)
 
 	g_bShowTriggers[client] = false;
 	g_fCommandLastUsed[client] = 0.0;
+
+	g_CalculatingPoints[client] = false;
 }
 
 public void clearPlayerCheckPoints(int client)
@@ -3618,4 +3620,16 @@ void TransmitTriggers(bool transmit)
 			SDKUnhook(entity, SDKHook_SetTransmit, Hook_SetTriggerTransmit);
 	}
 	s_bHooked = transmit;
+}
+
+public void FormatPercentage(float perc, char[] buffer, int size)
+{
+	if (perc < 10.0)
+		Format(buffer, size, "%.1f", perc);
+	else if (perc == 100.0)
+		Format(buffer, size, "100.0");
+	else if (perc > 100.0)
+		Format(buffer, size, "100.0");
+	else
+		Format(buffer, size, "%.1f", perc);
 }

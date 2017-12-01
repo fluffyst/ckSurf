@@ -733,8 +733,13 @@ int g_pr_points[MAX_PR_PLAYERS + 1]; 							// Clients points
 int g_pr_oldpoints[MAX_PR_PLAYERS + 1];							// Clients points before recalculation
 int g_pr_multiplier[MAX_PR_PLAYERS + 1]; 						// How many times has the client improved on his times
 int g_pr_finishedmaps[MAX_PR_PLAYERS + 1]; 						// How many maps a client has finished
+int g_pr_finishedbonuses[MAX_PR_PLAYERS + 1];					// How many bonuses a client has finished
+int g_pr_finishedstages[MAX_PR_PLAYERS + 1];
 int g_PlayerRank[MAXPLAYERS + 1]; 								// Players server rank
-int g_MapRecordCount[MAXPLAYERS + 1];							// SR's the client has
+int g_Points[MAX_PR_PLAYERS + 1][8];							// Array of points detailing specifically where the client is getting their points from
+int g_GroupMaps[MAX_PR_PLAYERS + 1];							// Amount of maps the player has a group on
+int g_Top10Maps[MAX_PR_PLAYERS + 1];							// Amount of maps the player is top 10 on
+int g_WRs[MAX_PR_PLAYERS + 1][3];								// Amount of wrs, wrbs, wrcps the player has
 char g_pr_szName[MAX_PR_PLAYERS + 1][64];						// Used to update client's name in database
 char g_pr_szSteamID[MAX_PR_PLAYERS + 1][32];					// steamid of client being recalculated
 bool g_CalculatingPoints[MAXPLAYERS + 1];						// Used to ensure that 1 client cant have multiple recalcs in progress
@@ -789,6 +794,7 @@ bool g_bLoadingStages;
 int g_StageRecords[CPLIMIT][StageRecord];
 int g_StagePlayerRank[MAXPLAYERS+1][CPLIMIT];
 int g_RepeatStage[MAXPLAYERS+1] = {-1, ...};
+int g_totalStageCount;
 //bool g_bStageIgnorePrehop[CPLIMIT];
 //float g_fStageMaxVelocity[CPLIMIT];
 //bool g_bStageAllowHighJumps[CPLIMIT];
@@ -810,6 +816,15 @@ float g_Group2Pc = 0.0625;
 float g_Group3Pc = 0.125;
 float g_Group4Pc = 0.25;
 float g_Group5Pc = 0.5;
+int g_G1Top;
+int g_G2Bot;
+int g_G2Top;
+int g_G3Bot;
+int g_G3Top;
+int g_G4Bot;
+int g_G4Top;
+int g_G5Bot;
+int g_G5Top;
 
 // Map Improvement command
 char g_szMiMapName[MAXPLAYERS + 1][128];
@@ -1100,7 +1115,7 @@ public void OnConfigsExecuted()
 	else
 		readMultiServerMapcycle();
 
-	// Count the amount of bonuses and then set skillgroups
+	// Count the amount of bonuses and stages and then set skillgroups
 	if (!g_bRenaming && !g_bInTransactionChain)
 		db_selectBonusCount();
 	
